@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coin Break Timer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: one struck-coin dial in the middle of a dark vault, coins drifting behind it,
+   stream label top-left, status top-right, controls docked at the bottom and hidden when idle. */
+:root {
+  /* light: white marble and gold */
+  color-scheme: light;
+  --bg: linear-gradient(135deg, #fdfcf9, #f0ece1);
+  --text: #1c1810;
+  --muted: #6d6756;
+  --gold: #a17613;
+  --gold-bright: #c9a03a;
+  --on-gold: #1b1503;
+  --line: rgba(161, 118, 19, .42);
+  --dial: radial-gradient(circle at 35% 28%, #ffffff 0%, #f7f3e9 55%, #e9e2d0 100%);
+  --dial-ring: rgba(255, 255, 255, .8);
+  --shadow: 0 30px 70px rgba(80, 60, 10, .28);
+  --panel: rgba(255, 255, 255, .88);
+  --pill: rgba(255, 255, 255, .8);
+  --ctl-b: rgba(28, 24, 16, .2);
+  --ctl-bg: rgba(28, 24, 16, .04);
+  --tick-off: rgba(28, 24, 16, .15);
+  --font-display: "Bricolage Grotesque", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --d: min(80vw, 56vh, 600px);
+}
+:root[data-theme="dark"] {
+  /* dark: navy and black with gold */
+  color-scheme: dark;
+  --bg: radial-gradient(90vmax 60vmax at 50% 36%, #10244f 0%, transparent 62%),
+        radial-gradient(70vmax 40vmax at 85% 110%, rgba(231, 190, 92, .12) 0%, transparent 60%), #03050a;
+  --text: #f4eedd;
+  --muted: #93a0bd;
+  --gold: #e7be5c;
+  --gold-bright: #e7be5c;
+  --line: rgba(231, 190, 92, .3);
+  --dial: radial-gradient(circle at 35% 28%, #17305f 0%, #0b1836 50%, #04080f 100%);
+  --dial-ring: rgba(3, 5, 10, .55);
+  --shadow: 0 30px 80px rgba(0, 0, 0, .6);
+  --panel: rgba(4, 8, 18, .86);
+  --pill: rgba(4, 8, 18, .6);
+  --ctl-b: rgba(244, 238, 221, .18);
+  --ctl-bg: rgba(244, 238, 221, .05);
+  --tick-off: rgba(244, 238, 221, .13);
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  overflow-x: hidden;
+}
+.marble { position: fixed; inset: 0; width: 100%; height: 100%; display: none; }
+:root:not([data-theme="dark"]) .marble { display: block; }
+body.transparent .marble { display: none; }
+body.transparent { background: transparent; }
+canvas#coins { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+.stage {
+  position: relative; min-height: 100%;
+  display: grid; grid-template-rows: auto 1fr auto; gap: 12px;
+  padding: clamp(16px, 3vw, 36px);
+}
+body.bare { --d: min(86vw, 80vh, 780px); }
+
+/* top bar */
+.top { display: flex; justify-content: flex-end; align-items: center; gap: 16px; min-height: 32px; }
+.name {
+  margin: 0; font-family: var(--font-display); font-weight: 700; letter-spacing: .01em; line-height: 1.05;
+  font-size: calc(var(--d) * .062); text-wrap: balance; overflow-wrap: anywhere;
+}
+.name:empty { display: none; }
+.pill {
+  display: inline-flex; align-items: center; gap: 9px; flex: none;
+  padding: 7px 14px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--pill);
+  font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase;
+}
+.pill i { width: 9px; height: 9px; border-radius: 50%; border: 2px solid var(--muted); }
+body[data-state="running"] .pill i { background: var(--gold-bright); border-color: var(--gold); animation: pulse 1.6s ease-in-out infinite; }
+body[data-state="paused"] .pill i { border-radius: 0; border: 0; border-left: 3px solid var(--muted); border-right: 3px solid var(--muted); width: 10px; height: 10px; }
+body[data-state="done"] .pill i { background: var(--text); border-color: var(--text); }
+@keyframes pulse { 50% { opacity: .35; transform: scale(.8); } }
+
+/* dial */
+.center { display: grid; place-items: center; }
+.dial { position: relative; width: var(--d); height: var(--d); }
+.dial::before {
+  content: ""; position: absolute; inset: 6%; border-radius: 50%;
+  background: var(--dial);
+  box-shadow: var(--shadow), inset 0 0 0 1px var(--line), inset 0 0 0 calc(var(--d) * .022) var(--dial-ring), inset 0 0 0 calc(var(--d) * .024) var(--line);
+}
+#rim { position: absolute; inset: 0; width: 100%; height: 100%; }
+#rim line { stroke: var(--tick-off); stroke-width: 1.5; stroke-linecap: round; }
+#rim line.on { stroke: var(--gold-bright); }
+body[data-state="done"] #rim line { stroke: var(--gold-bright); animation: pulse 1.6s ease-in-out infinite; }
+.dial-in {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: calc(var(--d) * .022); text-align: center;
+  padding: 0 calc(var(--d) * .14);
+}
+.msg {
+  margin: 0; font-size: calc(var(--d) * .042); font-weight: 600;
+  letter-spacing: .22em; text-transform: uppercase; color: var(--gold);
+  text-wrap: balance; overflow-wrap: anywhere;
+}
+.digits {
+  font-family: var(--font-display); font-weight: 700; line-height: .9;
+  font-size: calc(var(--d) * .25); white-space: nowrap;
+}
+.digits.long { font-size: calc(var(--d) * .17); }
+.digits span { display: inline-block; width: .62em; text-align: center; }
+.digits span.sep { width: .3em; color: var(--gold); transform: translateY(-.06em); }
+body.final .digits { color: var(--gold); }
+.sub { margin: 0; font-size: calc(var(--d) * .036); color: var(--muted); min-height: 1.3em; }
+.sub b { color: var(--text); font-weight: 600; }
+
+/* controls */
+.panel {
+  justify-self: center; width: min(100%, 720px);
+  display: grid; gap: 12px; padding: 14px;
+  border: 1px solid var(--line); border-radius: 18px;
+  background: var(--panel); backdrop-filter: blur(10px);
+  transition: opacity .5s;
+}
+body.idle .panel { opacity: 0; }
+body.bare .panel { display: none; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; justify-content: center; }
+body[data-state="running"] .row.fields { display: none; }
+button, input {
+  font: inherit; color: var(--text); border-radius: 10px;
+  border: 1px solid var(--ctl-b); background: var(--ctl-bg);
+  padding: 10px 14px; min-height: 42px;
+}
+button { cursor: pointer; font-weight: 600; font-size: 14px; }
+button:hover { border-color: var(--gold); }
+button.primary { background: var(--gold-bright); border-color: var(--gold-bright); color: #1b1503; min-width: 108px; }
+button.primary:hover { filter: brightness(1.08); }
+button[aria-pressed="true"] { border-color: var(--gold); color: var(--gold); }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.field { display: grid; gap: 5px; flex: 1 1 180px; font-size: 12px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; }
+.field.small { flex: 0 1 130px; }
+.field input { width: 100%; font-size: 15px; letter-spacing: 0; text-transform: none; }
+.field { text-align: left; }
+.keys {
+  position: fixed; left: 18px; bottom: 16px; display: grid; gap: 5px;
+  font-size: 11.5px; color: var(--muted); transition: opacity .5s;
+}
+.keys kbd {
+  display: inline-block; min-width: 22px; padding: 1px 6px; margin-right: 4px; text-align: center;
+  font: 600 11px var(--font-body); color: var(--text);
+  border: 1px solid var(--ctl-b); border-radius: 5px; background: var(--panel);
+}
+body.idle .keys { opacity: 0; }
+body.bare .keys { display: none; }
+@media (max-width: 1180px), (hover: none) { .keys { display: none; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pill i, #rim line { animation: none !important; }
+  .panel { transition: none; }
+}
+</style>
+</head>
+<body data-state="idle">
+<svg class="marble" aria-hidden="true">
+  <defs>
+    <filter id="veinGrey" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.003 0.0055" numOctaves="5" seed="7"/>
+      <feColorMatrix values="0 0 0 0 .42  0 0 0 0 .43  0 0 0 0 .47  1 0 0 0 0"/>
+      <feComponentTransfer><feFuncA type="table" tableValues="0 0 0 0 0 0 0 0 .03 .12 .3 .12 .03 0 0 0 0 0 0 0 0"/></feComponentTransfer>
+    </filter>
+    <filter id="veinGold" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="4" seed="31"/>
+      <feColorMatrix values="0 0 0 0 .79  0 0 0 0 .62  0 0 0 0 .22  1 0 0 0 0"/>
+      <feComponentTransfer><feFuncA type="table" tableValues="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .12 .55 .12 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"/></feComponentTransfer>
+    </filter>
+  </defs>
+  <rect width="100%" height="100%" filter="url(#veinGrey)"/>
+  <rect width="100%" height="100%" filter="url(#veinGold)"/>
+</svg>
+<canvas id="coins" aria-hidden="true"></canvas>
+
+<div class="stage">
+  <header class="top">
+    <div class="pill"><i></i><span id="pillText">Ready</span></div>
+  </header>
+
+  <main class="center">
+    <div class="dial">
+      <svg id="rim" viewBox="0 0 200 200" aria-hidden="true"></svg>
+      <div class="dial-in">
+        <p class="name" id="nameOut"></p>
+        <p class="msg" id="msgOut">Be right back</p>
+        <div class="digits" id="digits" role="timer" aria-label="Time remaining"></div>
+        <p class="sub" id="sub"></p>
+      </div>
+    </div>
+  </main>
+
+  <footer class="panel" id="panel">
+    <div class="row">
+      <button class="primary" id="btnGo" type="button">Start</button>
+      <button id="btnTheme" type="button">Dark mode</button>
+      <button id="btnFull" type="button">Fullscreen</button>
+    </div>
+    <div class="row fields" id="fields">
+      <label class="field small" for="inMin">Set time (min)
+        <input id="inMin" type="number" min="1" max="1440" step="1" inputmode="numeric">
+      </label>
+      <label class="field small" for="inUntil">Or back at
+        <input id="inUntil" type="time">
+      </label>
+      <label class="field" for="inName">Stream name
+        <input id="inName" type="text" maxlength="40" placeholder="Optional">
+      </label>
+      <label class="field" for="inMsg">Message
+        <input id="inMsg" type="text" maxlength="40" placeholder="Be right back">
+      </label>
+    </div>
+    <div class="row" id="presets" role="group" aria-label="Preset times">
+      <button type="button" data-min="1">1 min</button>
+      <button type="button" data-min="5">5 min</button>
+      <button type="button" data-min="10">10 min</button>
+      <button type="button" data-min="15">15 min</button>
+      <button type="button" data-min="30">30 min</button>
+    </div>
+    <div class="row" role="group" aria-label="Adjust time">
+      <button id="btnMinus" type="button" aria-label="Remove one minute">&minus;1 min</button>
+      <button id="btnPlus30" type="button" aria-label="Add thirty seconds">+30 secs</button>
+      <button id="btnPlus1" type="button" aria-label="Add one minute">+1 min</button>
+      <button id="btnPlus5" type="button" aria-label="Add five minutes">+5 mins</button>
+    </div>
+  </footer>
+</div>
+<aside class="keys" aria-label="Keyboard shortcuts">
+  <span><kbd>Space</kbd> start / pause</span>
+  <span><kbd>F</kbd> fullscreen</span>
+  <span><kbd>T</kbd> light / dark</span>
+  <span><kbd>R</kbd> reset</span>
+</aside>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var MIN = 60000, KEY = "coinBreakTimer.v1", TICKS = 120;
+
+  /* ---------- state ---------- */
+  var S = { duration: 10 * MIN, total: 10 * MIN, endAt: null, paused: null, msg: "Be right back", name: "", theme: null };
+  try {
+    var saved = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (saved && typeof saved.duration === "number") {
+      for (var k in S) if (k in saved) S[k] = saved[k];
+    }
+  } catch (e) {}
+  function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+
+  function clockToMs(hhmm) {
+    var m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || "");
+    if (!m) return null;
+    var t = new Date(); t.setHours(+m[1], +m[2], 0, 0);
+    if (t.getTime() <= Date.now()) t.setDate(t.getDate() + 1);
+    return t.getTime() - Date.now();
+  }
+
+  /* URL parameters override saved state (handy for OBS browser sources) */
+  var q = new URLSearchParams(location.search), fromUrl = false;
+  if (q.has("msg")) S.msg = q.get("msg").slice(0, 40);
+  if (q.has("name")) S.name = q.get("name").slice(0, 40);
+  var qm = parseFloat(q.get("m")), qu = clockToMs(q.get("until"));
+  if (qu) { S.duration = qu; fromUrl = true; }
+  else if (qm > 0) { S.duration = Math.min(qm, 1440) * MIN; fromUrl = true; }
+  if (fromUrl) { S.endAt = null; S.paused = null; S.total = S.duration; }
+  if (q.get("theme") === "light" || q.get("theme") === "dark") S.theme = q.get("theme");
+  var light = true;
+  function applyTheme() {
+    var t = S.theme || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    light = t !== "dark";
+    document.documentElement.dataset.theme = t;
+    $("btnTheme").textContent = light ? "Dark mode" : "Light mode";
+  }
+  function flipTheme() { S.theme = light ? "dark" : "light"; save(); applyTheme(); if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) draw(0); }
+  applyTheme();
+  if (q.get("controls") === "0") document.body.classList.add("bare");
+  if (q.get("bg") === "0") document.body.classList.add("transparent");
+
+  function status() {
+    if (S.endAt != null) return S.endAt - Date.now() <= 0 ? "done" : "running";
+    return S.paused != null ? "paused" : "idle";
+  }
+  function remaining() {
+    if (S.endAt != null) return Math.max(0, S.endAt - Date.now());
+    return S.paused != null ? S.paused : S.duration;
+  }
+  function start() {
+    var st = status();
+    if (st === "running") return;
+    if (st === "paused") { S.endAt = Date.now() + S.paused; S.paused = null; }
+    else { S.total = S.duration; S.paused = null; S.endAt = Date.now() + S.duration; }
+    save(); render();
+  }
+  function pause() {
+    if (status() !== "running") return;
+    S.paused = Math.max(0, S.endAt - Date.now()); S.endAt = null; save(); render();
+  }
+  function reset() { S.endAt = null; S.paused = null; S.total = S.duration; save(); render(); }
+  function toggle() { status() === "running" ? pause() : start(); }
+  function add(ms) {
+    var st = status();
+    if (st === "running") S.endAt = Math.max(Date.now() + 1000, S.endAt + ms);
+    else if (st === "paused") S.paused = Math.max(1000, S.paused + ms);
+    else if (st === "done") { if (ms <= 0) return; S.endAt = Date.now() + ms; S.total = ms; }
+    else { S.duration = Math.min(1440 * MIN, Math.max(MIN / 2, S.duration + ms)); S.total = S.duration; }
+    S.total = Math.max(S.total, remaining());
+    save(); render();
+  }
+  function setDuration(ms, autoStart) {
+    var wasRunning = status() === "running";
+    S.duration = Math.min(1440 * MIN, Math.max(1000, ms));
+    S.endAt = null; S.paused = null; S.total = S.duration;
+    if (wasRunning || autoStart) start(); else { save(); render(); }
+  }
+
+  /* ---------- rim ticks ---------- */
+  var rim = $("rim"), tickEls = [];
+  for (var i = 0; i < TICKS; i++) {
+    var ln = document.createElementNS("http://www.w3.org/2000/svg", "line");
+    ln.setAttribute("x1", 100); ln.setAttribute("x2", 100);
+    ln.setAttribute("y1", 2.5); ln.setAttribute("y2", i % 10 === 0 ? 9.5 : 7.5);
+    ln.setAttribute("transform", "rotate(" + (i * 360 / TICKS) + " 100 100)");
+    rim.appendChild(ln); tickEls.push(ln);
+  }
+
+  /* ---------- render ---------- */
+  var last = { text: "", lit: -1, state: "", sub: "" };
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function render() {
+    var st = status(), rem = remaining(), secs = Math.ceil(rem / 1000);
+    var h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+    var text = h > 0 ? h + ":" + pad(m) + ":" + pad(s) : pad(m) + ":" + pad(s);
+    if (text !== last.text) {
+      var html = "";
+      for (var i = 0; i < text.length; i++) html += text[i] === ":" ? '<span class="sep">:</span>' : "<span>" + text[i] + "</span>";
+      $("digits").innerHTML = html;
+      $("digits").classList.toggle("long", h > 0);
+      last.text = text;
+    }
+    var lit = st === "done" ? TICKS : Math.ceil(Math.min(1, rem / (S.total || 1)) * TICKS);
+    if (lit !== last.lit) {
+      for (var j = 0; j < TICKS; j++) tickEls[j].classList.toggle("on", j >= TICKS - lit);
+      last.lit = lit;
+    }
+    document.body.classList.toggle("final", st === "running" && secs <= 10);
+
+    var sub;
+    if (st === "running") sub = "Back at <b>" + new Date(S.endAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + "</b>";
+    else if (st === "paused") sub = "Timer paused";
+    else if (st === "done") sub = "Starting again any moment";
+    else sub = "Press Start when you step away";
+    if (sub !== last.sub) { $("sub").innerHTML = sub; last.sub = sub; }
+
+    if (st !== last.state) {
+      if (st === "done" && last.state === "running") burst();
+      document.body.dataset.state = st;
+      $("pillText").textContent = { idle: "Ready", running: "On break", paused: "Paused", done: "Back now" }[st];
+      $("btnGo").textContent = { idle: "Start", running: "Pause", paused: "Resume", done: "Restart" }[st];
+      last.state = st;
+      wake();
+    }
+    $("msgOut").textContent = st === "done" ? "We're back" : (S.msg || "Be right back");
+    $("nameOut").textContent = S.name;
+    var mins = Math.round(S.duration / MIN);
+    document.querySelectorAll("#presets button").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(+b.dataset.min === mins && S.duration % MIN === 0));
+    });
+  }
+
+  /* ---------- controls ---------- */
+  $("btnGo").onclick = toggle;
+  $("btnMinus").onclick = function () { add(-MIN); };
+  $("btnPlus30").onclick = function () { add(MIN / 2); };
+  $("btnPlus1").onclick = function () { add(MIN); };
+  $("btnPlus5").onclick = function () { add(5 * MIN); };
+  $("btnFull").onclick = fullscreen;
+  $("btnTheme").onclick = flipTheme;
+  $("presets").onclick = function (e) {
+    var b = e.target.closest("button"); if (!b) return;
+    $("inMin").value = b.dataset.min; setDuration(+b.dataset.min * MIN);
+  };
+  $("inMin").value = Math.max(1, Math.round(S.duration / MIN));
+  $("inMin").onchange = function () { var v = parseFloat(this.value); if (v > 0) setDuration(v * MIN); };
+  $("inUntil").onchange = function () { var ms = clockToMs(this.value); if (ms) setDuration(ms, true); };
+  $("inMsg").value = S.msg; $("inName").value = S.name;
+  $("inMsg").oninput = function () { S.msg = this.value; save(); render(); };
+  $("inName").oninput = function () { S.name = this.value; save(); render(); };
+
+  function fullscreen() {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen().catch(function () {});
+    } catch (e) {}
+  }
+  document.addEventListener("keydown", function (e) {
+    wake();
+    if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.code === "Space") { if (e.target.tagName !== "BUTTON") { e.preventDefault(); toggle(); } }
+    else if (e.key === "f" || e.key === "F") fullscreen();
+    else if (e.key === "t" || e.key === "T") flipTheme();
+    else if (e.key === "r" || e.key === "R") reset();
+  });
+
+  /* fade the controls out while the timer runs and nobody is touching the page */
+  var idleT;
+  function wake() {
+    document.body.classList.remove("idle");
+    clearTimeout(idleT);
+    idleT = setTimeout(function () {
+      var a = document.activeElement;
+      var typing = a && a.tagName === "INPUT";
+      if (status() === "running" && !typing) document.body.classList.add("idle");
+    }, 3500);
+  }
+  ["pointermove", "pointerdown", "focusin"].forEach(function (ev) { document.addEventListener(ev, wake, { passive: true }); });
+
+  /* ---------- coins ---------- */
+  var cv = $("coins"), ctx = cv.getContext("2d"), W = 0, H = 0, TAU = Math.PI * 2;
+  var still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var METALS = [
+    { hi: "#fff0b8", mid: "#e7be5c", lo: "#8f6a1c", edge: "#6d5013", line: "rgba(92,66,12,.55)" },   // gold
+    { hi: "#ffffff", mid: "#cfd8dc", lo: "#7b888d", edge: "#5d696e", line: "rgba(70,82,88,.5)" },    // silver
+    { hi: "#ffd0ad", mid: "#cc8152", lo: "#7a4222", edge: "#5c3018", line: "rgba(84,42,18,.55)" }    // copper
+  ];
+  /* Real coin photos. Each entry is one image holding both sides side by side ("both"),
+     or separate "front" and "back" images. To self-host, save the files into a coins/
+     folder in the repo and replace the URLs with paths such as "coins/indian-5.jpg".
+     Any plain or transparent background is removed in the browser. */
+  function wm(hash, file, w) {
+    return "https://upload.wikimedia.org/wikipedia/commons/thumb/" + hash + "/" + encodeURIComponent(file) + "/" + w + "px-" + encodeURIComponent(file);
+  }
+  var PHOTOS = [
+    { name: "1908 $5 Indian Head half eagle", metal: 0, id: "half-eagle-1908", both: wm("e/e7", "NNC-US-1908-G$5-Indian_Head.jpg", 960) },
+    { name: "1866 $5 Liberty Head half eagle", metal: 0, id: "half-eagle-1866", both: wm("b/b1", "NNC-US-1866-G$5-Liberty_Head_(motto).jpg", 960) },
+    { name: "1834 $5 Classic Head half eagle", metal: 0, id: "half-eagle-1834", both: wm("a/a8", "NNC-US-1834-G$5-Classic_Head.jpg", 960) },
+    { name: "1807 $5 Capped Bust half eagle", metal: 0, id: "half-eagle-1807", both: wm("8/8a", "NNC-US-1807-G$5-Capped_Bust.jpg", 960) },
+    { name: "1795 $5 Turban Head half eagle", metal: 0, id: "half-eagle-1795", both: wm("7/79", "NNC-US-1795-G$5-Turban_Head_(heraldic_eagle).jpg", 960) },
+    { name: "1945 Walking Liberty half dollar", metal: 1, id: "walking-liberty-1945",
+      front: wm("b/bc", "Walking_Liberty_Half_Dollar_1945D_Obverse.png", 500),
+      back: wm("b/b4", "Walking_Liberty_Half_Dollar_1945D_Reverse.png", 500) }
+  ];
+  var FACES = [];
+  function loadImg(url, cb) {
+    if (!url) return cb(null);
+    var im = new Image();
+    im.crossOrigin = "anonymous";
+    im.onload = function () { cb(im); };
+    im.onerror = function () { cb(null); };
+    im.src = url;
+  }
+  /* Find the coin inside a region of the image and return it cut to a transparent circle. */
+  function cut(im, x0, sw) {
+    try {
+      var sh = im.naturalHeight, k = Math.min(1, 480 / sh);
+      var w = Math.max(8, Math.round(sw * k)), h = Math.max(8, Math.round(sh * k));
+      var t = document.createElement("canvas"); t.width = w; t.height = h;
+      var tc = t.getContext("2d", { willReadFrequently: true });
+      tc.drawImage(im, x0, 0, sw, sh, 0, 0, w, h);
+      var d = tc.getImageData(0, 0, w, h).data;
+      var pts = [[2, 2], [w - 3, 2], [2, h - 3], [w - 3, h - 3]], bg = [0, 0, 0, 0];
+      pts.forEach(function (p) { var i = (p[1] * w + p[0]) * 4; for (var c = 0; c < 4; c++) bg[c] += d[i + c] / 4; });
+      var clear = bg[3] < 20, minX = w, minY = h, maxX = -1, maxY = -1;
+      for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
+        var j = (y * w + x) * 4;
+        var hit = clear ? d[j + 3] > 40
+          : Math.abs(d[j] - bg[0]) + Math.abs(d[j + 1] - bg[1]) + Math.abs(d[j + 2] - bg[2]) > 54;
+        if (hit) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+      }
+      if (maxX - minX < w * 0.2 || maxY - minY < h * 0.2) { minX = 0; minY = 0; maxX = w - 1; maxY = h - 1; }
+      var r = Math.max(maxX - minX, maxY - minY) / 2 * 0.985, cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      var D = Math.round(r * 2), o = document.createElement("canvas"); o.width = D; o.height = D;
+      var oc = o.getContext("2d");
+      oc.beginPath(); oc.arc(D / 2, D / 2, D / 2, 0, TAU); oc.clip();
+      oc.drawImage(t, cx - r, cy - r, r * 2, r * 2, 0, 0, D, D);
+      return o;
+    } catch (e) { return null; }
+  }
+  function addFace(f, b, metal) {
+    if (!f) return;
+    FACES.push({ f: f, b: b || f, metal: metal });
+    coins.forEach(function (c, i) { c.photo = FACES[i % FACES.length]; c.metal = c.photo.metal; });
+    if (still) draw(0);
+  }
+  function loadRemote(p) {
+    if (p.both) loadImg(p.both, function (im) {
+      if (!im) return;
+      var half = Math.floor(im.naturalWidth / 2);
+      addFace(cut(im, 0, half), cut(im, half, half), p.metal);
+    });
+    else loadImg(p.front, function (fi) {
+      if (!fi) return;
+      loadImg(p.back, function (bi) {
+        addFace(cut(fi, 0, fi.naturalWidth), bi && cut(bi, 0, bi.naturalWidth), p.metal);
+      });
+    });
+  }
+  /* Use the cut-out files in coins/ when they exist next to this page; otherwise load from Wikimedia. */
+  function loadPhotos() {
+    PHOTOS.forEach(function (p) {
+      loadImg("coins/" + p.id + "-obv.webp", function (fi) {
+        if (!fi) return loadRemote(p);
+        loadImg("coins/" + p.id + "-rev.webp", function (bi) { addFace(fi, bi, p.metal); });
+      });
+    });
+  }
+  var coins = [], bursts = [];
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+  function makeCoin(depth) {
+    var base = Math.max(14, Math.min(W, H) * 0.05);
+    var ph = FACES.length ? FACES[Math.floor(Math.random() * FACES.length)] : null;
+    return {
+      x: rnd(0, W), y: rnd(0, H), depth: depth,
+      r: base * (0.45 + depth * 0.95),
+      alpha: 0.4 + depth * 0.6,
+      vy: -(6 + depth * 16), sway: rnd(6, 18), swayP: rnd(0, TAU), swayS: rnd(0.2, 0.5),
+      phase: rnd(0, TAU), spin: rnd(0.5, 1.3) * (Math.random() < 0.5 ? -1 : 1),
+      tilt: rnd(0, TAU), tiltS: rnd(-0.15, 0.15),
+      metal: Math.random() < 0.55 ? 0 : (Math.random() < 0.6 ? 1 : 2),
+      photo: ph
+    };
+  }
+  function seed() {
+    var n = Math.round(Math.min(34, Math.max(14, W * H / 42000)));
+    coins = [];
+    for (var i = 0; i < n; i++) coins.push(makeCoin(Math.pow(Math.random(), 1.4)));
+    coins.sort(function (a, b) { return a.depth - b.depth; });
+    coins.forEach(function (c, i) { if (FACES.length) { c.photo = FACES[i % FACES.length]; } if (c.photo) c.metal = c.photo.metal; });
+  }
+  function resize() {
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    seed();
+    if (still) draw(0);
+  }
+  function star(r) {
+    ctx.beginPath();
+    for (var i = 0; i < 10; i++) {
+      var a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * 0.42 : r;
+      ctx[i ? "lineTo" : "moveTo"](Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.closePath();
+  }
+  function drawCoin(c) {
+    var cosv = Math.cos(c.phase), sx = Math.max(Math.abs(cosv), 0.07), m = METALS[c.metal], r = c.r;
+    ctx.save();
+    ctx.translate(c.x, c.y); ctx.rotate(c.tilt); ctx.globalAlpha = c.alpha;
+    // edge thickness, visible as the coin turns side-on
+    var off = r * 0.16 * (1 - sx) * (Math.sin(c.phase) > 0 ? 1 : -1);
+    if (light) { ctx.shadowColor = "rgba(70, 52, 10, .3)"; ctx.shadowBlur = r * 0.4; ctx.shadowOffsetY = r * 0.14; }
+    ctx.fillStyle = m.edge;
+    ctx.beginPath(); ctx.ellipse(off, 0, r * sx, r, 0, 0, TAU); ctx.fill();
+    ctx.shadowColor = "transparent";
+    if (c.photo) {
+      ctx.scale(sx, 1);
+      ctx.drawImage(cosv > 0 ? c.photo.f : c.photo.b, -r, -r, r * 2, r * 2);
+      ctx.restore();
+      return;
+    }
+    // face
+    var g = ctx.createLinearGradient(-r * sx, -r, r * sx, r);
+    g.addColorStop(0, m.hi); g.addColorStop(0.45, m.mid); g.addColorStop(1, m.lo);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.ellipse(0, 0, r * sx, r, 0, 0, TAU); ctx.fill();
+    // struck detail
+    ctx.scale(sx, 1);
+    ctx.strokeStyle = m.line; ctx.fillStyle = m.line; ctx.lineWidth = Math.max(1, r * 0.06);
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.8, 0, TAU); ctx.stroke();
+    if (r > 12) {
+      if (cosv > 0) { star(r * 0.42); ctx.fill(); }
+      else {
+        ctx.lineCap = "round";
+        for (var i = -1; i <= 1; i++) {
+          ctx.beginPath(); ctx.moveTo(-r * 0.36, i * r * 0.24); ctx.lineTo(r * 0.36, i * r * 0.24); ctx.stroke();
+        }
+      }
+    }
+    ctx.restore();
+  }
+  function draw(dt) {
+    ctx.clearRect(0, 0, W, H);
+    for (var i = 0; i < coins.length; i++) {
+      var c = coins[i];
+      c.phase += c.spin * dt; c.tilt += c.tiltS * dt; c.swayP += c.swayS * dt;
+      c.y += c.vy * dt; c.x += Math.cos(c.swayP) * c.sway * dt;
+      if (c.y < -c.r * 2) { c.y = H + c.r * 2; c.x = rnd(0, W); }
+      if (c.x < -c.r * 2) c.x = W + c.r * 2; else if (c.x > W + c.r * 2) c.x = -c.r * 2;
+      drawCoin(c);
+    }
+    for (var j = bursts.length - 1; j >= 0; j--) {
+      var b = bursts[j];
+      b.vy += 900 * dt; b.y += b.vy * dt; b.x += b.vx * dt; b.phase += b.spin * dt; b.tilt += b.tiltS * dt;
+      if (b.y > H + b.r * 2) bursts.splice(j, 1); else drawCoin(b);
+    }
+  }
+  function burst() {
+    if (still) return;
+    for (var i = 0; i < 46; i++) {
+      var c = makeCoin(rnd(0.5, 1));
+      c.x = rnd(0, W); c.y = rnd(-H * 0.6, -c.r * 2); c.vy = rnd(0, 240); c.vx = rnd(-40, 40);
+      c.spin *= 5; c.alpha = 0.95;
+      bursts.push(c);
+    }
+  }
+  var prev = 0;
+  function loop(t) {
+    var dt = Math.min(0.05, (t - prev) / 1000 || 0); prev = t;
+    draw(dt);
+    requestAnimationFrame(loop);
+  }
+  window.addEventListener("resize", resize);
+  resize();
+  if (!still) requestAnimationFrame(loop);
+
+  /* ---------- go ---------- */
+  loadPhotos();
+  render();
+  if (fromUrl && q.get("autostart") === "1") start();
+  setInterval(render, 200);
+  wake();
+})();
+</script>
+</body>
+</html>
