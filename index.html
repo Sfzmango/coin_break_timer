@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Coin Break Timer</title>
+<link rel="icon" type="image/png" href="brand/favicon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -79,6 +80,12 @@ body.bare { --d: min(86vw, 80vh, 780px); }
   font-size: calc(var(--d) * .062); text-wrap: balance; overflow-wrap: anywhere;
 }
 .name:empty { display: none; }
+.logo {
+  width: calc(var(--d) * .33); aspect-ratio: 867 / 471; flex: none; background: var(--text);
+  -webkit-mask: url("brand/witter-coin-logo.png") center / contain no-repeat;
+  mask: url("brand/witter-coin-logo.png") center / contain no-repeat;
+}
+body.nologo .logo { display: none; }
 .pill {
   display: inline-flex; align-items: center; gap: 9px; flex: none;
   padding: 7px 14px; border-radius: 999px;
@@ -199,6 +206,7 @@ body.bare .keys { display: none; }
     <div class="dial">
       <svg id="rim" viewBox="0 0 200 200" aria-hidden="true"></svg>
       <div class="dial-in">
+        <div class="logo" role="img" aria-label="Witter Coin"></div>
         <p class="name" id="nameOut"></p>
         <p class="msg" id="msgOut">Be right back</p>
         <div class="digits" id="digits" role="timer" aria-label="Time remaining"></div>
@@ -292,6 +300,7 @@ body.bare .keys { display: none; }
   function flipTheme() { S.theme = light ? "dark" : "light"; save(); applyTheme(); if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) draw(0); }
   applyTheme();
   if (q.get("controls") === "0") document.body.classList.add("bare");
+  if (q.get("logo") === "0") document.body.classList.add("nologo");
   if (q.get("bg") === "0") document.body.classList.add("transparent");
 
   function status() {

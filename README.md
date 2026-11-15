@@ -9,9 +9,14 @@ Add it to OBS as a Browser source and set it up in the URL:
 - `m` is minutes; `until=13:30` counts down to a clock time instead
 - `theme=light` or `theme=dark`
 - `bg=0` for a transparent background
+- `logo=0` hides the logo
 
 ## Coin photos
 
 Photos are from Wikimedia Commons: US half eagles from the National Numismatic Collection,
 Smithsonian Institution, and the Walking Liberty half dollar by BrandonBigheart (CC BY-SA 3.0).
 `scripts/fetch_coins.py` downloads them and cuts each coin out to a transparent WebP in `coins/`.
+
+## Logo
+
+The Witter Coin name and logo in `brand/` are trademarks of Witter Coin and are used here for its stream break screen.
