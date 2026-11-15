@@ -102,7 +102,8 @@ body[data-state="done"] .pill i { background: var(--text); border-color: var(--t
 #rim { position: absolute; inset: 0; width: 100%; height: 100%; }
 #rim line { stroke: var(--tick-off); stroke-width: 1.5; stroke-linecap: round; }
 #rim line.on { stroke: var(--gold-bright); }
-body[data-state="done"] #rim line { stroke: var(--gold-bright); animation: pulse 1.6s ease-in-out infinite; }
+body[data-state="done"] #rim { animation: breathe 2.4s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: .45; } }
 .dial-in {
   position: absolute; inset: 0; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: calc(var(--d) * .022); text-align: center;
@@ -135,7 +136,7 @@ body.final .digits { color: var(--gold); }
 body.idle .panel { opacity: 0; }
 body.bare .panel { display: none; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; justify-content: center; }
-body[data-state="running"] .row.fields { display: none; }
+body[data-state="running"] .row.fields, body[data-state="running"] #presets { display: none; }
 button, input {
   font: inherit; color: var(--text); border-radius: 10px;
   border: 1px solid var(--ctl-b); background: var(--ctl-bg);
@@ -165,7 +166,7 @@ body.bare .keys { display: none; }
 @media (max-width: 1180px), (hover: none) { .keys { display: none; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .pill i, #rim line { animation: none !important; }
+  .pill i, #rim { animation: none !important; }
   .panel { transition: none; }
 }
 </style>
